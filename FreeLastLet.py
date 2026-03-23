@@ -1,3 +1,4 @@
+#This script is not fully completed so you may encounter several bugs while playing
 import tkinter as tk
 from tkinter import messagebox, ttk
 import random

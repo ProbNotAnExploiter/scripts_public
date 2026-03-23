@@ -24,10 +24,8 @@ WARNING_TEXT = "#fef2f2"
 Game_state = "mainmenu"
 DIFFICULTY = ["easy", "medium", "hard", "extreme"]
 TRIES_PER_TURN = 5
-
 TIMER_MIN = 2
 TIMER_MAX = 50
-
 URLS = [
     "https://raw.githubusercontent.com/ProbNotAnExploiter/wordies/refs/heads/main/old_skrylor",
 ]
@@ -51,7 +49,6 @@ def load_words():
         except:
             pass
     return words
-
 
 def build_cache():
     words = load_words()
@@ -79,7 +76,6 @@ cache = load_cache()
 words = cache["words"]
 prefix_map = cache["prefix_map"]
 used = set()
-
 
 def valid(prefix):
     return [w for w in prefix_map.get(prefix, []) if w not in used]
@@ -111,8 +107,6 @@ def load_TRAPS():
 
 
 TRAPS_2, TRAPS_3, TRAPS_4 = load_TRAPS()
-
-
 def trap_penalty(word):
     word = word.lower()
     penalty = 1.0
@@ -187,18 +181,15 @@ class App:
         self.mode = tk.StringVar(value="bot")
         self.difficulty = tk.StringVar(value="medium")
         self.timer_setting = tk.IntVar(value=15)
-
         self.container = tk.Frame(root, bg=BG)
         self.container.pack(expand=True, fill="both")
         self.paused = False
         self.slow_factor = 1.0
         self.slow_job = None
         self.overlay = None
-
         self.error_notification_frame = tk.Frame(root, bg="#dc2626", height=50)
         self.error_notification_frame.place(relx=0, rely=0, anchor="nw", relwidth=1)
         self.error_notification_frame.place_forget()
-
         self.error_notification_label = tk.Label(
             self.error_notification_frame,
             text="",

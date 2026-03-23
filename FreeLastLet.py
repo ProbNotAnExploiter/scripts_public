@@ -1,4 +1,3 @@
-#this script isnt fully completed so you may encounter some bugs while playing, thanks
 import tkinter as tk
 from tkinter import messagebox, ttk
 import random
@@ -24,10 +23,15 @@ WARNING_TEXT = "#fef2f2"
 Game_state = "mainmenu"
 DIFFICULTY = ["easy", "medium", "hard", "extreme"]
 TRIES_PER_TURN = 5
+
 TIMER_MIN = 2
 TIMER_MAX = 50
+
 URLS = [
     "https://raw.githubusercontent.com/ProbNotAnExploiter/wordies/refs/heads/main/old_skrylor",
+    "https://raw.githubusercontent.com/ProbNotAnExploiter/wordies/main/2letterstraps",
+    "https://raw.githubusercontent.com/ProbNotAnExploiter/wordies/main/3kimpossiblewords4letters",
+    "https://raw.githubusercontent.com/ProbNotAnExploiter/wordies/main/3letterstrap"
 ]
 
 impossible_urls = [
@@ -48,7 +52,9 @@ def load_words():
             words.update(w.strip().lower() for w in r.text.splitlines() if w.strip())
         except:
             pass
+    words = set()
     return words
+
 
 def build_cache():
     words = load_words()
@@ -76,6 +82,7 @@ cache = load_cache()
 words = cache["words"]
 prefix_map = cache["prefix_map"]
 used = set()
+
 
 def valid(prefix):
     return [w for w in prefix_map.get(prefix, []) if w not in used]
@@ -107,6 +114,8 @@ def load_TRAPS():
 
 
 TRAPS_2, TRAPS_3, TRAPS_4 = load_TRAPS()
+
+
 def trap_penalty(word):
     word = word.lower()
     penalty = 1.0
@@ -181,15 +190,18 @@ class App:
         self.mode = tk.StringVar(value="bot")
         self.difficulty = tk.StringVar(value="medium")
         self.timer_setting = tk.IntVar(value=15)
+
         self.container = tk.Frame(root, bg=BG)
         self.container.pack(expand=True, fill="both")
         self.paused = False
         self.slow_factor = 1.0
         self.slow_job = None
         self.overlay = None
+
         self.error_notification_frame = tk.Frame(root, bg="#dc2626", height=50)
         self.error_notification_frame.place(relx=0, rely=0, anchor="nw", relwidth=1)
         self.error_notification_frame.place_forget()
+
         self.error_notification_label = tk.Label(
             self.error_notification_frame,
             text="",
@@ -855,48 +867,92 @@ class App:
 
 
     def get_dynamic_prefix(self, last_word, for_bot=False):
-        self.turn_count += 1
-        if self.turn_count <= 5:
-            lengths = [1]
-            weights = [100]
-        elif self.turn_count <= 10:
-            lengths = [1, 2]
-            weights = [40, 60]
-        elif self.turn_count <= 15:
-            lengths = [1, 2, 3]
-            weights = [50, 30, 20]
-        else:
-            lengths = [1, 2, 3, 4]
-            weights = [30, 30, 25, 15]
-
-        source_word = (last_word or getattr(self, 'player_word', ""))
-
-        if source_word:
-       
-            suffix = source_word[-4:] if len(source_word) >= 4 else source_word
-            valid_lengths = [l for l in lengths if l <= len(suffix)]
-            ignored_weight = sum(w for l, w in zip(lengths, weights) if l > len(suffix))
-
-            if valid_lengths and ignored_weight > 0:
-                redistributed_weight = ignored_weight / len(valid_lengths)
-                valid_weights = [w + redistributed_weight for l, w in zip(lengths, weights) if l <= len(suffix)]
+            self.turn_count += 1
+            if self.turn_count <= 5:
+                lengths = [1]
+                weights = [100]
+            elif self.turn_count <= 10:
+                lengths = [1, 2]
+                weights = [40, 60]
+            elif self.turn_count <= 15:
+                lengths = [1, 2, 3]
+                weights = [50, 30, 20]
             else:
-                valid_weights = [w for l, w in zip(lengths, weights) if l <= len(suffix)]
+                lengths = [1, 2, 3, 4]
+                weights = [30, 30, 25, 15]
 
-            length = random.choices(valid_lengths, weights=valid_weights)[0]
-            prefix = suffix[-length:]
-        else:
-            prefix = random.choice(string.ascii_lowercase)
-        if not for_bot:
-            self.prefix = prefix
-            self.set_prefix()
-            if self.mode.get() == "self":
-                self.tries_left = TRIES_PER_TURN
-                self.tries_label.config(text=f"Tries: {self.tries_left}")
-                self.reset_timer()
+            source_word = (last_word or getattr(self, 'player_word', "")).lower().strip()
 
-        return prefix
+            if not source_word:
+                prefix = random.choice(string.ascii_lowercase)
+            else:
+                raw_candidates = []
+                suffix_base = source_word[-4:] if len(source_word) >= 4 else source_word
 
+                for length in lengths:
+                    if length > len(suffix_base):
+                        continue
+                    suffix = suffix_base[-length:]
+                    if suffix not in prefix_map:
+                        continue
+                    num_valid = len(valid(suffix))
+                    base_score = weights[lengths.index(length)]
+                    score = 3 if num_valid == 0 else base_score   
+                    raw_candidates.append((suffix, score, num_valid))
+
+                if not raw_candidates:
+                    last_letter = source_word[-1:]
+                    num_valid = len(valid(last_letter))
+                    score = 3 if num_valid == 0 else 97
+                    raw_candidates.append((last_letter, score, num_valid))
+
+                target_dead = random.uniform(0.03, 0.05)
+
+                raw_sum = sum(s for _, s, _ in raw_candidates) or 1.0
+
+                good = [c for c in raw_candidates if c[2] > 0]
+                dead = [c for c in raw_candidates if c[2] == 0]
+
+                if not good:
+                    candidates = [(p, 1 / len(raw_candidates)) for p, _, _ in raw_candidates]
+                else:
+                    dead_raw = sum(c[1] for c in dead)
+                    good_raw = raw_sum - dead_raw
+
+                    if dead_raw == 0:
+                        candidates = [(p, s / raw_sum) for p, s, _ in good]
+                    else:
+                        good_mult = (1 - target_dead) / good_raw if good_raw else 0
+                        dead_mult = target_dead / dead_raw
+
+                        good_new = [(p, s * good_mult) for p, s, _ in good]
+                        dead_new = [(p, s * dead_mult) for p, s, _ in dead]
+
+                        combined = good_new + dead_new
+                        total = sum(p for _, p in combined) or 1.0
+
+                        candidates = [(prefix, prob / total) for prefix, prob in combined]
+
+                prefix = weighted_choice(candidates)
+                prefix = str(prefix).strip()
+
+                if not isinstance(prefix, str):
+                    self.log_text.insert("end", f"[BUG] prefix was {type(prefix)} → forced to str\n")
+                    self.log_text.see("end")
+            if not for_bot:
+                self.prefix = prefix
+                self.set_prefix()
+                if self.mode.get() == "self":
+                    self.tries_left = TRIES_PER_TURN
+                    self.tries_label.config(text=f"Tries: {self.tries_left}")
+                    self.reset_timer()
+                if len(valid(prefix)) == 0:
+                    pct = target_dead * 100
+                    self.log_text.insert("end", "impossible ahh prefix")
+                    self.log_text.see("end")
+                   
+
+            return prefix
 
     def set_prefix(self):
         self.entry.delete(0, tk.END)
@@ -906,9 +962,18 @@ class App:
 
 
     def lock_prefix(self, event):
+        if not hasattr(self, 'prefix') or self.prefix is None:
+            return "break"
+    
+        prefix_str = str(self.prefix).strip()  
+    
         if event.keysym in ["BackSpace", "Delete"]:
-            if self.entry.index(tk.INSERT) <= len(self.prefix):
-                return "break"
+            try:
+                if self.entry.index(tk.INSERT) <= len(prefix_str):
+                    return "break"
+            except:
+                return "break"  
+    
         if event.keysym == "space":
             return "break"
     def greaterthing(self, event=None):

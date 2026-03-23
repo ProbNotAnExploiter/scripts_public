@@ -52,7 +52,6 @@ def load_words():
             words.update(w.strip().lower() for w in r.text.splitlines() if w.strip())
         except:
             pass
-    words = set()
     return words
 
 
@@ -491,7 +490,7 @@ class App:
             bd=0,
             relief="flat"
         )
-        self.log_frame.place(relx=0, rely=0, anchor="nw", width=380, relheight=1)
+        self.log_frame.place(relx=0, rely=0, anchor="nw", width=480, relheight=1)
 
         log_header = tk.Label(
             self.log_frame,
@@ -528,7 +527,7 @@ class App:
             self.quest_frame,
             bg=BG,
             fg=TEXT,
-            font=("Arial", 11),
+            font=("Arial", 16),
             wrap="word",
             padx=10,
             pady=12,
@@ -610,10 +609,15 @@ class App:
             text = "  ".join(display_words)
         else:
             text = "No Traps"
+        
 
         self.quest_display.insert("1.0", text)
         self.quest_display.config(state="disabled")
 
+        
+        char_count = len(text)
+        new_width = min(500, max(180, char_count * 7))
+        self.quest_frame.place_configure(width=new_width)
 
 
     def assign_random_traps(self):
@@ -621,7 +625,7 @@ class App:
         if not all_traps:
             self.quest_words = []
             return
-        num_traps = random.randint(1, min(5, len(all_traps)))
+        num_traps = random.randint(1, min(10, len(all_traps)))
         self.quest_words = random.sample(all_traps, num_traps)
         self.strikethrough_words.clear()
 

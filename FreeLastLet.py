@@ -1,4 +1,4 @@
-#This script is not fully completed so you may encounter several bugs while playing
+#this script isnt fully completed so you may encounter some bugs while playing, thanks
 import tkinter as tk
 from tkinter import messagebox, ttk
 import random
@@ -488,14 +488,14 @@ class App:
             bd=0,
             relief="flat"
         )
-        self.log_frame.place(relx=0, rely=0, anchor="nw", width=260, relheight=1)
+        self.log_frame.place(relx=0, rely=0, anchor="nw", width=380, relheight=1)
 
         log_header = tk.Label(
             self.log_frame,
             text="Match logs",
             font=("Consolas", 12, "bold"),
             bg=BG,
-            fg="#B2B2B2",
+            fg="#FFFFFF",
             pady=10
         )
         log_header.pack(fill="x")
@@ -727,7 +727,7 @@ class App:
             self.reset_timer()
             self.log_text.insert("end", f"Blud submitted; {word}\n")
             self.label.config(text=prefix.upper())
-            self.bot_response_label.config(text=f"Blud: {word} => ({prefix})")
+            self.bot_response_label.config(text=f"Blud: {word}")
             self.log_text.see("end")
         elif self.mode.get() == "bot":
             self.log_text.see("end")
@@ -806,25 +806,33 @@ class App:
                     options = [w for w in valid(current_prefix) if w.startswith(current_prefix)]
                     if options:
                         solve_word = random.choice(options)
+                        self.bot_response_label.config(text= f"Blud yapped: {self.prefix}")
                         self.entry.delete(0, tk.END)
                         self.entry.insert(0, solve_word)
-
-                   
+                        self.log_text.see("end")
+                    
                         new_prefix = self.get_dynamic_prefix(solve_word)
                         self.prefix = new_prefix
                         self.set_prefix()
+                        self.label.config(text=self.prefix) 
                         self.tries_left = TRIES_PER_TURN
                         self.tries_label.config(text=f"Tries: {self.tries_left}")
                         self.reset_timer()
-                        self.log_text.insert("end", f"the solve for {current_prefix} is {solve_word}\n")
+                        self.log_text.insert("end", f"the solve for {current_prefix} is {solve_word} Btw\n")
+
                         self.log_text.see("end")
                     else:
                         random_prefix = random.choice(string.ascii_lowercase)
+                        self.bot_response_label.config(text= f"Blud yapped: {self.prefix}")
                         self.prefix = random_prefix
                         self.set_prefix()
                         self.tries_left = TRIES_PER_TURN
                         self.tries_label.config(text=f"Tries: {self.tries_left}")
                         self.reset_timer()
+                        self.log_text.see("end")
+                        self.label.config(text=current_prefix)
+                        self.bot_response_label.config(text= f"Blud yapped: #######")
+                        self.label.config(text=self.prefix) 
                         self.log_text.insert("end", f"i dont have the solve for {self.prefix} \n")
                         self.log_text.insert("end", f"skipped, heres yo new prefix {random_prefix}\n")
                         self.log_text.see("end")
@@ -835,7 +843,9 @@ class App:
                     self.tries_left = TRIES_PER_TURN
                     self.tries_label.config(text=f"Tries: {self.tries_left}")
                     self.reset_timer()
+                    self.bot_response_label.config(text= f"Blud yapped: #######")
                     self.log_text.insert("end", f"heres yo new prefix:{random_prefix}\n")
+                    self.label.config(text=random_prefix) 
                     self.log_text.see("end")
         elif ability == "+7s":
             self.time_left += 7

@@ -1,0 +1,1001 @@
+from tabnanny import check
+import tkinter as tk
+import subprocess
+import requests
+import math
+import numpy as np
+import mss
+import keyboard
+import pydirectinput
+import time
+import random
+import threading
+import sys
+import datetime
+import os
+import pickle
+from cryptography.fernet import Fernet
+import base64, hashlib
+
+THRESHOLD = 0.88
+THRESHOLDOFDOUBLEPRESSKEYS = 0.3
+MIN_DISTANCE = 30
+pydirectinput.PAUSE = 0
+pydirectinput.FAILSAFE = False
+Word_typed = ""
+QWERTY_NEIGHBORS = {
+    'q': 'wa', 'w': 'qeas', 'e': 'wrsd',
+    'r': 'etdf', 't': 'ryfg', 'y': 'tugh',
+    'u': 'yihj', 'i': 'uojk', 'o': 'ipkl',
+    'p': 'ol',
+    'a': 'qwsz', 's': 'wedxza', 'd': 'erfcxs',
+    'f': 'rtgvcd', 'g': 'tyhbvf', 'h': 'yujnbg',
+    'j': 'uikmnh', 'k': 'iolmj', 'l': 'mopk',
+    'z': 'asx', 'x': 'zsdc', 'c': 'xdfv',
+    'v': 'cfgb', 'b': 'vghn',
+    'n': 'bhjm', 'm': 'njkl'
+}
+Human_typing_mode = True
+
+roblox_pos = None
+word_finder_pos = None
+PASSWORD = "3(x+5)=2x+17!Q7#"
+
+def keycrypt(password):
+    key = hashlib.sha256(password.encode()).digest()
+    key = base64.urlsafe_b64encode(key)
+    return Fernet(key)
+
+def decrypt(encrypted_text):
+    try:
+        fernet = keycrypt(PASSWORD)
+        decrypted = fernet.decrypt(encrypted_text.encode())
+        return decrypted.decode()
+    except Exception as e:
+        print("Decrypt failed:", e)
+        return ""
+
+
+def link_exists_or_quit():
+      url = "https://raw.githubusercontent.com/ProbNotAnExploiter/wordies/refs/heads/main/placeholder.txt"
+
+      try:
+        response = requests.head(url, timeout=5)
+
+        if response.status_code != 200:
+            print("Link not found. Shutting down")
+            sys.exit()
+
+      except requests.RequestException:
+        print("Link unreachable. Shutting down")
+        sys.exit()
+
+link_exists_or_quit()
+
+class OverlayConsole:
+    
+
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Word Helper Overlay")
+        self.root.geometry("650x500+1000+200")
+        self.root.configure(bg="#0a0a14")
+        self.root.attributes("-topmost", True)
+        self.root.attributes("-alpha", 0.98)
+        self.root.overrideredirect(True)
+        self.ocr_lock = False
+        self.last_ocr_time = 0
+        self.ocr_state = "free"  
+        self.ocr_cooldown = 0.7  
+        self.prefix_triggers = set()
+        self.special_words = set()
+        self.special_mode = False
+        self.impossible_mode = False
+        self.impossible_words = []
+        self.double_press_threshold = 0.3
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        self.log_dir = os.path.join(script_dir, "logs")
+        os.makedirs(self.log_dir, exist_ok=True)
+        self.history_file = os.path.join(self.log_dir, "wordlogs.txt")
+        if not os.path.exists(self.history_file):
+            with open(self.history_file, "w", encoding="utf-8") as f:
+                f.write("Word helper logs\n\n")
+
+        self.last_press_time = {}
+        self.message_frame = tk.Frame(root, bg="#0a0a14")
+        self.message_frame.pack(fill="both", expand=False, padx=10, pady=6)
+
+        self.message_frame.columnconfigure(0, weight=1)
+        self.message_frame.columnconfigure(1, weight=1)
+
+        left_container = tk.Frame(self.message_frame, bg="#111122")
+        left_container.grid(row=0, column=0, sticky="nsew", padx=(0,5))
+
+        self.left_text = tk.Text(
+            left_container,
+            bg="#111122",
+            fg="#00ffff",
+            font=("Segoe UI", 11, "bold"),
+            height=8,
+            wrap="word",
+            bd=0,
+            highlightthickness=0,
+            relief="flat"
+        )
+        self.left_text.pack(side="left", fill="both", expand=True)
+
+        left_scroll = tk.Scrollbar(left_container, command=self.left_text.yview)
+        left_scroll.pack(side="right", fill="y")
+        self.left_text.config(yscrollcommand=left_scroll.set)
+
+        right_container = tk.Frame(self.message_frame, bg="#1a0f14")
+        right_container.grid(row=0, column=1, sticky="nsew", padx=(5,0))
+
+        self.right_text = tk.Text(
+            right_container,
+            bg="#1a0f14",
+            fg="#ff4d4d",
+            font=("Segoe UI", 11, "bold"),
+            height=8,
+            wrap="word",
+            bd=0,
+            highlightthickness=0,
+            relief="flat"
+        )
+        self.right_text.pack(side="left", fill="both", expand=True)
+
+        right_scroll = tk.Scrollbar(right_container, command=self.right_text.yview)
+        right_scroll.pack(side="right", fill="y")
+        self.right_text.config(yscrollcommand=right_scroll.set)
+
+      
+        self.words_frame = tk.Frame(root, bg="#0a0a14", bd=0, relief="flat", highlightthickness=0)
+        self.words_frame.pack(fill="both", expand=True, padx=10, pady=5)
+
+        self.offset_x = 0
+        self.offset_y = 0
+        self.root.bind("<Button-1>", self.start_move)
+        self.root.bind("<B1-Motion>", self.on_move)
+
+        self.word_list = []
+        self.matches = []
+        self.prefix = ""
+        self.selected_index = 0
+        self.word_chosen = False
+        self.active_typing_lock = False
+        self.word_boxes = [] 
+        self.columns = 3
+        self.makestoptyping = False
+ 
+        self.start_var = tk.StringVar()
+        self.contain_var = tk.StringVar()
+        self.end_var = tk.StringVar()
+
+        if not self._is_roblox_running():
+            self.write("Roblox gui not detected", "error")
+            self.write("Please open roblox for this script to start", "error")
+            self.root.after(4000, self.root.destroy)
+            return
+
+        self.templates = self.load_templates()
+        self.load_word_source()
+        self.start_hotkeys()
+        self.monitor_roblox()
+        self.refresh_display()
+
+    def start_hotkeys(self):
+        keyboard.add_hotkey("F5", lambda: threading.Thread(target=self.ocrlock, daemon=True).start())
+        keyboard.add_hotkey("F3", self.type) #type the word
+        keyboard.add_hotkey("tab+esc", self.exit_program)
+        keyboard.add_hotkey("up", self.move_up)
+        keyboard.add_hotkey("down", self.move_down)
+        keyboard.add_hotkey("left", self.move_left)
+        keyboard.add_hotkey("right", self.move_right)
+        keyboard.add_hotkey("F4", self.choose_word) #choose The word on the gui list
+        keyboard.add_hotkey("F7", self.testimpsocr) #same as Ocr but using impossible word list
+        keyboard.add_hotkey("F2", self.choose_longest_word)
+        keyboard.add_hotkey("F6", self.lazy_combo) #full route - ocr - random word - type
+        self.add_double_hotkey("2", self.delete_word) #delete the typed word 
+        keyboard.add_hotkey("F1", self.choose_random_word) #choose random word from gui list
+        keyboard.add_hotkey("F8", self.impossibe_combo) #same as full route f7 but using impossible word list
+        keyboard.add_hotkey("shift+esc", self.toggle_typingmode) #base = ON to simulate human typing , OFF recommended for last seconds
+        self.add_double_hotkey("3", self.typingcancel) #cancel typing process if the word is too long like trak-
+
+    def ocrlock(self):
+        current_time = time.time()
+
+        if current_time - self.last_ocr_time < self.ocr_cooldown:
+             return
+
+        if self.ocr_lock:
+             return      
+
+        self.last_ocr_time = current_time
+        self.ocr_lock = True
+
+        def worker():
+          try:
+            self.run_ocr()
+          finally:
+            self.ocr_lock = False
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def start_move(self, event):
+        self.offset_x = event.x
+        self.offset_y = event.y
+
+    def on_move(self, event):
+        x = event.x_root - self.offset_x
+        y = event.y_root - self.offset_y
+        self.root.geometry(f"+{x}+{y}")
+
+    def _is_roblox_running(self):
+        try:
+            output = subprocess.check_output(
+                ["tasklist"],
+                text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            return "RobloxPlayerBeta.exe" in output
+        except:
+            return False
+
+    def monitor_roblox(self):
+        if not self._is_roblox_running():
+            self.root.after(1500, self.root.destroy)
+            return
+        self.root.after(2000, self.monitor_roblox)
+
+    CACHE_FILE = "templates_cache.pkl"
+
+    def load_templates(self):
+     if os.path.exists(self.CACHE_FILE):
+        with open(self.CACHE_FILE, "rb") as f:
+            print("Loaded templates from cache")
+            return pickle.load(f)
+
+     print("Fetching file list from GitHub...")
+
+     api_url = "https://api.github.com/repos/ProbNotAnExploiter/wordies/contents/letters_resized"
+     response = requests.get(api_url, timeout=10)
+     files = response.json()
+
+     templates = {}
+
+     import cv2 
+
+     for file in files:
+        if file["name"].endswith(".png"):
+            raw_url = file["download_url"]
+
+            try:
+                img_data = requests.get(raw_url, timeout=10).content
+                img_array = np.frombuffer(img_data, np.uint8)
+                img = cv2.imdecode(img_array, cv2.IMREAD_GRAYSCALE)
+
+                if img is None:
+                    continue
+
+                _, img = cv2.threshold(img, 200, 255, cv2.THRESH_BINARY)
+                img = cv2.resize(img, None, fx=0.98, fy=0.98)
+
+                letter = file["name"].replace(".png", "").upper()
+                templates[letter] = img
+
+            except Exception as e:
+                print("Failed loading:", file["name"])
+
+     with open(self.CACHE_FILE, "wb") as f:
+        pickle.dump(templates, f)
+
+     print("Templates downloaded and cached")
+     return templates
+    
+    def add_double_hotkey(self, key, callback):
+        self.last_press_time[key] = 0
+
+        def check(event):
+      
+            if event.event_type != "down":
+                return
+
+        
+            if event.name != key:
+                return
+
+            now = time.time()
+
+            if now - self.last_press_time[key] <= self.double_press_threshold:
+                callback()
+
+            self.last_press_time[key] = now
+
+   
+        keyboard.hook(check)
+
+
+    Word_lists = "Word_lists.pkl"
+    def load_word_source(self):
+        if os.path.exists(self.Word_lists):
+            with open(self.Word_lists, "rb") as f:
+                data = pickle.load(f)
+                self.word_list = data.get("word_list", [])
+                self.impossible_words = data.get("impossible_words", [])
+
+
+            return
+        
+        print("")
+        urls = [
+          "https://raw.githubusercontent.com/ProbNotAnExploiter/wordies/refs/heads/main/oldlastletterlibrary.txt"
+        ]
+        impossible_urls = [
+        "https://raw.githubusercontent.com/ProbNotAnExploiter/wordies/main/2letterstraps",
+        "https://raw.githubusercontent.com/ProbNotAnExploiter/wordies/main/3kimpossiblewords4letters",
+        "https://raw.githubusercontent.com/ProbNotAnExploiter/wordies/main/3letterstrap"
+        ]
+
+        solve_list = "https://raw.githubusercontent.com/ProbNotAnExploiter/wordies/refs/heads/main/solve.txt"
+        prefixes = "https://raw.githubusercontent.com/ProbNotAnExploiter/wordies/refs/heads/main/prefixer"
+        all_words = set()
+
+        for url in urls: 
+            try:
+                with open(url, "r", encoding="utf-8") as f:
+                    raw_text = f.read().strip()
+
+                words = {
+                    line.strip().lower()
+                    for line in raw_text.splitlines()
+                    if line.strip()
+                }
+
+                all_words |= words
+
+            except Exception as e:
+                print(f"failed at {url}: {e}")
+
+        self.word_list = sorted(all_words)
+
+        try:
+            r = requests.get(solve_list, timeout=10)
+            r.raise_for_status()
+            self.prefix_triggers = {
+                line.strip().lower()
+                for line in r.text.splitlines()
+                if line.strip()
+            }
+        except:
+            self.prefix_triggers = set()
+
+        try:
+            r = requests.get(prefixes, timeout=10)
+            r.raise_for_status()
+            self.special_words = {
+                line.strip().lower()
+                for line in r.text.splitlines()
+                if line.strip()
+            }
+        except:
+            self.special_words = set()
+
+        all_impossible = set()
+
+        for url in impossible_urls:
+            try:
+                response = requests.get(url, timeout=10)
+                response.raise_for_status()
+
+                words = {
+                    line.strip().lower()
+                    for line in response.text.splitlines()
+                    if line.strip()
+                }
+
+                all_impossible |= words
+
+            except requests.RequestException:
+                print(f"failed for {url}")
+
+        self.impossible_words = sorted(all_impossible)
+        data = {
+            "word_list": self.word_list,
+            "impossible_words": self.impossible_words
+        }
+        with open(self.Word_lists, "wb") as f:
+            pickle.dump(data, f)
+
+
+
+    def toggle_typingmode(self):
+        global Human_typing_mode
+        Human_typing_mode = not Human_typing_mode
+        self.write(f"Human typing mode: {'ON' if Human_typing_mode else 'OFF'}")
+
+    def typingcancel(self):
+        if self.active_typing_lock:
+            self.write("Typing cancelled")
+            self.makestoptyping = True
+
+     
+    def run_ocr(self):
+        import cv2
+        self.write("\n[F2] OCR Activated...")
+        self.ocr_state = "busy"
+        
+
+        detected_letters = []
+        used_positions = []
+
+        def is_far_enough(new_pt):
+            for pt in used_positions:
+                if abs(new_pt[0] - pt[0]) < MIN_DISTANCE:
+                    return False
+            return True
+
+        with mss.mss() as sct:
+            region = {
+                "top": 78,
+                "left": 303,
+                "width": 1270,
+                "height": 211
+            }
+            screenshot = sct.grab(region)
+
+        screen = np.array(screenshot)
+        gray = cv2.cvtColor(screen, cv2.COLOR_BGRA2GRAY)
+        _, screen_bin = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
+        screen_bin = cv2.resize(screen_bin, None, fx=0.98, fy=0.98)
+
+        for letter, template in self.templates.items():
+            if template is None:
+                continue
+
+            result = cv2.matchTemplate(screen_bin, template, cv2.TM_CCOEFF_NORMED)
+            locations = np.where(result >= THRESHOLD)
+
+            for pt in zip(*locations[::-1]):
+                if is_far_enough(pt):
+                    detected_letters.append((pt[0], letter))
+                    used_positions.append(pt)
+
+        detected_letters.sort(key=lambda x: x[0])
+        word = "".join([letter for _, letter in detected_letters])
+
+        if word:
+            self.prefix = word.lower()
+            self.special_mode = False
+
+            for p in getattr(self, "prefix_triggers", []):
+                if self.prefix.startswith(p):
+                    self.special_mode = True
+                    break
+
+            self.selected_index = 0
+            self.word_chosen = False
+            self.write(f"Matching Result: {word}")
+
+            if self.special_mode:
+                source_list = self.special_words
+                self.last_mode = "special"
+            elif self.impossible_mode:
+                source_list = self.impossible_words
+                self.last_mode = "impossible"
+            else:
+                source_list = self.word_list
+            if self.impossible_mode:
+                matches = [
+                    w for w in self.impossible_words
+                    if w.startswith(self.prefix)
+                ]
+
+                if self.special_mode:
+                    self.last_mode = "special"
+                elif self.impossible_mode:
+                    self.last_mode = "impossible"
+                else:
+                    self.last_mode = "normal"
+
+                matches = [
+                    w for w in source_list
+                    if w.startswith(self.prefix)
+                ]
+
+                if not matches:
+                    matches = [
+                        w for w in self.word_list
+                        if w.startswith(self.prefix)
+                ]
+                if not matches and self.impossible_mode:
+                    matches = [
+                        w for w in self.word_list
+                        if w.startswith(self.prefix)
+                ]
+
+            else:
+                matches = [
+                        w for w in self.word_list
+                        if w.startswith(self.prefix)
+                ]
+
+
+            if not matches:
+                self.write("No matching words found.")
+                chosen = ""
+            else:
+                if len(matches) == 1:
+                    chosen = matches[0]
+                else:
+                    chosen = random.choice(matches)
+                    if hasattr(self, "last_word") and self.last_word and len(matches) > 1:
+                        while chosen == self.last_word:
+                            chosen = random.choice(matches)
+
+                self.last_word = chosen
+                self.write(f"Chosen Word: {chosen}")
+
+        else:
+            self.prefix = ""
+            self.write("No letters detected.")
+
+        self.refresh_display()
+        self.ocr_state = "done"
+
+        def release_flag():
+          time.sleep(0.3)
+          self.ocr_state = "free"
+        threading.Thread(target=release_flag, daemon=True).start()
+   
+    def refresh_display(self):
+        self.clear_info()
+        if self.prefix:
+          self.write(f"Prefix: {self.prefix}")
+        else:
+          self.write("Prefix: {None}")
+       
+        for widget in self.words_frame.winfo_children():
+            widget.destroy()
+        self.word_boxes.clear()
+        self.word_boxes = []
+
+        if not self.prefix:
+            self.write("Waiting for detected letter(s)...")
+            return
+
+    
+        if getattr(self, "special_mode", False):
+            source_list = self.special_words
+        elif self.impossible_mode:
+            source_list = self.impossible_words
+        else:
+            source_list = self.word_list
+
+        matching_words = [
+            w for w in source_list
+            if w.startswith(self.prefix)
+        ]
+
+        
+      
+        random.shuffle(matching_words)
+        self.matches = matching_words[:60]
+
+        if not self.matches:
+            self.write("No matches, try again...", "error")
+            return
+
+        rows = math.ceil(len(self.matches) / self.columns)
+
+        for row in range(rows):
+            row_frame = tk.Frame(self.words_frame, bg="#0a0a14")
+            row_frame.pack(fill="x", pady=4)
+            
+            for col in range(self.columns):
+                index = row + col * rows
+            
+                if index < len(self.matches):
+                    word = self.matches[index]
+                   
+                    if index == self.selected_index:
+                        bg_color = "#2b1b3a"  
+                        fg_color = "#0021DF" if self.word_chosen else "#ffffff"
+                        relief = "solid"
+                        bd = 2
+                        highlight_bg = "#ffb86b"
+                    else:
+                        bg_color = "#0a0a14"  
+                        fg_color = "#c8c8d0"  
+                        relief = "flat"
+                        bd = 0
+                        highlight_bg = "#0a0a14"
+
+                    entry = tk.Entry(
+                        row_frame,
+                        width=16,
+                        font=("Segoe UI", 12, "bold"),
+                        bg=bg_color,
+                        fg=fg_color,
+                        bd=bd,
+                        relief=relief,
+                        insertwidth=0,
+                        highlightthickness=1,
+                        highlightbackground=highlight_bg,
+                        highlightcolor="#ffb86b"
+                    )
+                    entry.insert(0, word)
+                    entry.config(state="readonly", readonlybackground=bg_color)
+                    entry.bind("<Button-1>", lambda e: "break")
+                    entry.bind("<Double-Button-1>", lambda e: "break")
+                    entry.pack(side="left", padx=6, pady=4)
+                    self.word_boxes.append((index, entry))
+
+
+    def _update_selection(self, old_index, new_index):
+        for idx, entry in list(self.word_boxes):
+            if not entry.winfo_exists():
+             continue  
+
+            if idx == new_index:
+              bg_color = "#2b1b3a"
+              fg_color = "#ff69b4" if self.word_chosen else "#ffffff"
+              relief = "solid"
+              bd = 2
+              highlight_bg = "#ffb86b"
+            elif idx == old_index:
+              bg_color = "#0a0a14"
+              fg_color = "#c8c8d0"
+              relief = "flat"
+              bd = 0
+              highlight_bg = "#0a0a14"
+            else:
+              continue
+
+            entry.config(
+              bg=bg_color,
+              fg=fg_color,
+              bd=bd,
+              relief=relief,
+              highlightbackground=highlight_bg,
+              readonlybackground=bg_color
+        )
+            
+    def clear_info(self):
+      self.left_text.config(state="normal")
+      self.left_text.delete("1.0", "end")
+      self.left_text.config(state="disabled")
+    
+    def clear_errors(self):
+      self.right_text.config(state="normal")
+      self.right_text.delete("1.0", "end")
+      self.right_text.config(state="disabled")
+
+
+    def move_up(self):
+        if not self.matches:
+            return
+        rows = math.ceil(len(self.matches) / self.columns)
+        if rows == 0:
+            return
+        current_row = self.selected_index % rows
+        if current_row > 0:
+            old_index = self.selected_index
+            self.selected_index -= 1
+            self.word_chosen = False
+            self._update_selection(old_index, self.selected_index)
+
+    def move_down(self):
+        if not self.matches:
+            return
+        rows = math.ceil(len(self.matches) / self.columns)
+        if rows == 0:
+            return
+        current_row = self.selected_index % rows
+        if current_row < rows - 1 and self.selected_index + 1 < len(self.matches):
+            old_index = self.selected_index
+            self.selected_index += 1
+            self.word_chosen = False
+            self._update_selection(old_index, self.selected_index)
+
+    def move_left(self):
+        if not self.matches:
+            return
+        rows = math.ceil(len(self.matches) / self.columns)
+        if rows == 0:
+            return
+        new_index = self.selected_index - rows
+        if new_index >= 0:
+            old_index = self.selected_index
+            self.selected_index = new_index
+            self.word_chosen = False
+            self._update_selection(old_index, self.selected_index)
+
+    def move_right(self):
+        if not self.matches:
+            return
+        rows = math.ceil(len(self.matches) / self.columns)
+        if rows == 0:
+            return
+        new_index = self.selected_index + rows
+        if new_index < len(self.matches):
+            old_index = self.selected_index
+            self.selected_index = new_index
+            self.word_chosen = False
+            self._update_selection(old_index, self.selected_index)
+
+ 
+    def choose_word(self):
+        if not self.matches or self.selected_index < 0 or self.selected_index >= len(self.matches):
+            self.start_var.set("")
+            self.contain_var.set("")
+            self.end_var.set("")
+            self.word_chosen = False
+            return
+
+        word = self.matches[self.selected_index]
+
+        start = self.prefix
+        prefix_len = len(self.prefix)
+        word_len = len(word)
+
+        if word_len <= prefix_len:
+            middle = ""
+            end = ""
+        else:
+            end = word[-1]
+            middle = word[prefix_len:-1] if word_len - prefix_len > 1 else ""
+
+        self.start_var.set(start)
+        self.contain_var.set(middle)
+        self.end_var.set(end)
+        self.write(f"Selected: {word} → Start: '{start}' | Mid: '{middle}' | End: '{end}'", "info")   
+        time.sleep(0.08)     
+        self.word_chosen = True
+
+        for idx, entry in self.word_boxes:
+          if idx == self.selected_index:
+            if entry.winfo_exists():
+                entry.config(
+                    fg="#ff69b4",
+                    readonlybackground="#2b1b3a"
+                )
+
+    def impossibe_combo(self):
+        if self.active_typing_lock:
+            return
+        
+        def worker():
+            self.impossible_mode = True
+            self.ocrlock()
+
+            while self.ocr_state != "done":
+                time.sleep(0.02)
+            
+            self.choose_random_word()
+            time.sleep(0.05)
+            self.impossible_mode = False
+            self.type()
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def testimpsocr(self):
+        self.impossible_mode = True
+        self.ocrlock()
+
+        while self.ocr_state != "done":
+            time.sleep(0.02)
+        
+        self.impossible_mode = False
+    
+
+    def lazy_combo(self):
+      if self.active_typing_lock:
+        return
+
+      def worker():
+        self.ocrlock()
+
+        while self.ocr_state != "done":
+            time.sleep(0.02)
+
+        self.choose_random_word()
+        time.sleep(0.05)
+        self.type()
+      threading.Thread(target=worker, daemon=True).start()
+
+
+    def choose_longest_word(self):
+        """Find and choose the longest word from current matches."""
+        if not self.matches:
+            self.write("No words to choose from.", "warning")
+            self.start_var.set("")
+            self.contain_var.set("")
+            self.end_var.set("")
+            self.word_chosen = False
+            return
+        
+        longest_word = max(self.matches, key=len)
+        longest_index = self.matches.index(longest_word)
+        
+    
+        self.selected_index = longest_index
+        self.choose_word()
+    def choose_random_word(self):
+        if not self.matches:
+          self.write("No words to choose from.", "warning")
+          self.start_var.set("")
+          self.contain_var.set("")
+          self.end_var.set("")
+          self.word_chosen = False
+          return
+
+        random_index = random.randint(0, len(self.matches) - 1)
+
+        old_index = self.selected_index
+        self.selected_index = random_index
+        self.word_chosen = False
+
+        self._update_selection(old_index, self.selected_index)
+
+        self.choose_word()
+
+    def log_word(self, word):
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        mode = getattr(self, "last_mode", "normal")
+        with open(self.history_file, "a", encoding="utf-8") as f:
+            f.write(f"{now} | {self.prefix} | {word} | {mode}\n")
+
+    def delete_word(self):
+        global Word_typed
+        if len(Word_typed) < 1:
+            self.write("No word to delete.", "warning")
+            return
+        
+        def worker():
+            global Word_typed
+            
+            try:
+
+                for _ in Word_typed:
+                     pydirectinput.press("backspace")
+                     time.sleep(0.05)
+
+                self.write(f"Deleted word", "info")
+                Word_typed = ""
+
+            except Exception as e:
+                print("Error:", e)
+                self.write("Delete failed", "error")
+            finally:
+                time.sleep(0.3)
+
+                self.root.focus_set()
+        threading.Thread(target=worker, daemon=True).start()
+                  
+
+    def type(self):
+        global Word_typed
+
+        if self.active_typing_lock:
+          self.write("Already typing...", "warning")
+          return
+
+        start = self.start_var.get().strip().lower()
+        mid = self.contain_var.get().strip().lower()
+        end = self.end_var.get().strip().lower()
+
+        full_word = mid + end
+        full_word_display = start + full_word
+
+        if not full_word and self.word_chosen:
+          pydirectinput.press("enter")
+          return
+        if not self.word_chosen and not full_word:
+          self.write("Select a word first bro", "warning")
+          return
+        if full_word and not self.word_chosen:
+          return
+
+        self.write("Typin...", "info")
+        self.active_typing_lock = True
+        Word_typed = ""
+
+        def worker():
+            global Word_typed
+            try:
+                if Human_typing_mode:
+
+                    base_speed = 0.05
+                    mistake_chance = 0.07
+
+                    for char in full_word:
+                        if self.makestoptyping:
+                            break
+
+                        lower_char = char.lower()
+
+            
+                        if lower_char in QWERTY_NEIGHBORS and random.random() < mistake_chance:
+                            wrong_char = random.choice(QWERTY_NEIGHBORS[lower_char])
+                            pydirectinput.press(wrong_char)
+                            time.sleep(random.uniform(0.08, 0.18))
+                            pydirectinput.press("backspace")
+                            time.sleep(random.uniform(0.035, 0.4))
+
+                        
+                        pydirectinput.press(char)
+                        time.sleep(random.uniform(0.05, 0.1))
+
+                        delay = random.uniform(base_speed - 0.02, base_speed + 0.03)
+                        time.sleep(max(0.02, delay))
+
+                        if random.random() < 0.08:
+                            time.sleep(random.uniform(0.07, 0.18))
+
+                else:
+                 pydirectinput.moveRel(1, 0)
+                 time.sleep(0.05)
+                 pydirectinput.moveRel(-1, 0)
+                 time.sleep(0.08)
+
+                 for c in full_word:
+                     if self.makestoptyping:
+                         break
+                     
+                     pydirectinput.press(c)
+                     time.sleep(random.uniform(0.06, 0.15))
+
+                time.sleep(0.1)
+                pydirectinput.press("enter")
+                Word_typed = full_word
+                self.write(f"You typed: {full_word_display}", "success")
+                self.log_word(full_word_display)
+
+            except Exception as e:
+                print("Error:", e)
+                self.write("Typing failed", "error")
+
+            finally:
+                time.sleep(0.3)
+                self.active_typing_lock = False
+                self.makestoptyping = False
+                self.root.focus_set()
+                self.clear_info()
+                self.word_chosen = False
+            
+        threading.Thread(target=worker, daemon=True).start()
+
+    def write(self, message, level="info", duration=None):
+            colors = {
+                "info": "#00ffff",
+                "success": "#00ff88",
+                "warning": "#ffd966",
+                "error": "#ff4d4d"
+            }   
+
+            color = colors.get(level, "#00ffff")
+
+
+            if level in ["error", "warning"]:
+                target = self.right_text
+            else:
+                target = self.left_text
+
+
+            target.config(state="normal")
+
+            target.insert("end", message + "\n", level)
+            target.tag_config(level, foreground=color)
+
+            target.see("end") 
+
+            target.config(state="disabled")
+
+    def exit_program(self):
+        self.root.destroy()
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = OverlayConsole(root)
+    root.mainloop()
+    
